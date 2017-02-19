@@ -35,6 +35,9 @@ import android.widget.Toast;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 @TargetApi(Build.VERSION_CODES.LOLLIPOP)
 public class MainActivity extends Activity implements View.OnClickListener {
@@ -61,7 +64,9 @@ public class MainActivity extends Activity implements View.OnClickListener {
 
     private BluetoothGatt mGatt;
     private BluetoothGattCharacteristic mWriteCharacteristic, mRemoteCharacteristic;
+
     private BluetoothGattService mBatteryService;
+    private BluetoothGattCharacteristic mBatteryCharacteristic;
 
     boolean isSetMode;
 
@@ -126,12 +131,6 @@ public class MainActivity extends Activity implements View.OnClickListener {
                 mLayoutListDevice.setVisibility(View.GONE);
                 toggleDisconnectButton(true);
                 String text = "Successful connection.\n";
-                if (mBatteryService != null) {
-                    List<BluetoothGattCharacteristic> characteristics = mBatteryService.getCharacteristics();
-                    if (characteristics != null) {
-
-                    }
-                }
                 mTextStatus.setText(text);
 
             }
@@ -180,6 +179,22 @@ public class MainActivity extends Activity implements View.OnClickListener {
         findViewById(R.id.buttonDisconnect).setOnClickListener(this);
 
         findViewById(R.id.buttonCloseApp).setOnClickListener(this);
+
+        ScheduledExecutorService service = Executors.newSingleThreadScheduledExecutor();
+        service.scheduleAtFixedRate(new Runnable() {
+            @Override
+            public void run() {
+                /*runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        Toast.makeText(MainActivity.this, "Read", Toast.LENGTH_SHORT).show();
+                    }
+                });*/
+                if (mGatt != null && mBatteryCharacteristic != null) {
+                    mGatt.readCharacteristic(mBatteryCharacteristic);
+                }
+            }
+        }, 5, 5, TimeUnit.SECONDS);
     }
 
     @Override
@@ -410,25 +425,21 @@ public class MainActivity extends Activity implements View.OnClickListener {
                     if (services.size() >= 0) {
                         for (int i = 0; i < services.size(); i++) {
                             BluetoothGattService service = services.get(i);
-                            /*List<BluetoothGattCharacteristic> characteristics = service.getCharacteristics();
-                            if (characteristics != null) {
-                                if (characteristics.size() > 0) {
-                                    for (int j = 0; j < characteristics.size() && writeCharacteristic == null; j++) {
-                                        BluetoothGattCharacteristic characteristic = characteristics.get(j);
-                                        int charaProp = characteristic.getProperties();
-                                        if (((charaProp & BluetoothGattCharacteristic.PROPERTY_WRITE) |
-                                                (charaProp & BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE)) > 0) {
-                                            writeCharacteristic = characteristic;
-                                        }
-                                    }
-                                }
-                            }*/
                             UUID uuidWrite = UUID.fromString("f000aa64-0451-4000-b000-000000000000");
                             UUID uuidBattery = UUID.fromString("f000ffe0-0451-4000-b000-000000000000");
                             if (service.getUuid().compareTo(uuidWrite) == 0) {
                                 getCharacteristicsFromService(service);
                             } else if (service.getUuid().compareTo(uuidBattery) == 0) {
                                 mBatteryService = service;
+                                List<BluetoothGattCharacteristic> characteristics = mBatteryService.getCharacteristics();
+                                if (characteristics != null) {
+                                    UUID uuidBatteryChar = UUID.fromString("f000aa00-0451-4000-b000-000000000000");
+                                    for (int j = 0; j < characteristics.size(); j++) {
+                                        if (characteristics.get(j).getUuid().compareTo(uuidBatteryChar) == 0) {
+                                            mBatteryCharacteristic = characteristics.get(j);
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -439,7 +450,21 @@ public class MainActivity extends Activity implements View.OnClickListener {
         @Override
         public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
             super.onCharacteristicRead(gatt, characteristic, status);
-            gatt.disconnect();
+            UUID uuidBatteryChar = UUID.fromString("f000aa00-0451-4000-b000-000000000000");
+            if (characteristic.getUuid().compareTo(uuidBatteryChar) == 0) {
+                byte[] bytes = characteristic.getValue();
+                String value = new String(bytes);
+                if (mTextStatus != null) {
+                    String stt = mTextStatus.getText().toString();
+                    if (value.length() > 0) {
+                        stt += "\n" + value;
+                    } else {
+                        stt += "\nNo status.";
+                    }
+                    mTextStatus.setText(stt);
+                }
+            }
+            //gatt.disconnect();
         }
 
         @Override
@@ -463,7 +488,6 @@ public class MainActivity extends Activity implements View.OnClickListener {
                             mRemoteCharacteristic = characteristic;
                         }
                     }
-
                 }
             }
         }
@@ -477,7 +501,9 @@ public class MainActivity extends Activity implements View.OnClickListener {
         }
         switch (id) {
             case R.id.buttonRefresh:
-                mTextStatus.setText("Scanning...");
+                if (mTextStatus != null) {
+                    mTextStatus.setText("Scanning...");
+                }
                 if (mDeviceList != null) {
                     mDeviceList.clear();
                 }
@@ -513,6 +539,9 @@ public class MainActivity extends Activity implements View.OnClickListener {
                 }
                 break;
             case R.id.buttonOpen:
+                if (mTextStatus != null) {
+                    mTextStatus.setText("Unlocking!");
+                }
                 if (mWriteCharacteristic != null && mRemoteCharacteristic != null) {
                     if (isSetMode) {
                         isSetMode = false;
@@ -535,6 +564,9 @@ public class MainActivity extends Activity implements View.OnClickListener {
                 }
                 break;
             case R.id.buttonClose:
+                if (mTextStatus != null) {
+                    mTextStatus.setText("Locking!");
+                }
                 if (mWriteCharacteristic != null && mRemoteCharacteristic != null) {
                     if (isSetMode) {
                         isSetMode = false;
@@ -579,12 +611,6 @@ public class MainActivity extends Activity implements View.OnClickListener {
     }
 
     private void hideSoftKeyboard() {
-        /*View view = getWindow().getCurrentFocus();
-        if (view != null) {
-            InputMethodManager inputMethodManager = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-            inputMethodManager.hideSoftInputFromInputMethod(view.getWindowToken(), InputMethodManager.HIDE_IMPLICIT_ONLY);
-        }*/
-
         if (isShowKeyboard) {
             isShowKeyboard = false;
             InputMethodManager inputMethodManager = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);

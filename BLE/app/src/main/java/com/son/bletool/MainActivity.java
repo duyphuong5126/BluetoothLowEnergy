@@ -17,7 +17,6 @@ import android.bluetooth.le.ScanResult;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
-import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -25,10 +24,10 @@ import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.AdapterView;
 import android.widget.EditText;
 import android.widget.ImageView;
-import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -39,8 +38,8 @@ import java.util.UUID;
 
 @TargetApi(Build.VERSION_CODES.LOLLIPOP)
 public class MainActivity extends Activity implements View.OnClickListener {
-    private static final String TAG = "Bluetooth LE";
-    private static final String PASSWORD = "password";
+    private static final String TAG = "LEX";
+    private static final String PASSWORD = "p";
 
     private boolean isFromLollipop = false;
     private BluetoothAdapter mBluetoothAdapter;
@@ -50,21 +49,34 @@ public class MainActivity extends Activity implements View.OnClickListener {
 
     private static final int REQUEST_ENABLE_BT = 1;
     // Stops scanning after SCAN_PERIOD seconds.
-    private static final long SCAN_PERIOD = 10000;
+    private static final long SCAN_PERIOD = 4000;
     private LeDeviceListAdapter mDeviceAdapter;
     private ArrayList<BluetoothDevice> mDeviceList;
-
-    private LinearLayout mLayoutProgress;
-
-    private EditText mEdtPassword;
-    private View mLayoutPassword;
 
     private View mTextNoDevice;
     private BluetoothDevice mCurrentDevice;
     private boolean isActivatedDevice;
 
-    private View mLayoutControl;
-    private TextView mTxtDeviceInfo;
+    private EditText mEdtPassword;
+
+    private BluetoothGatt mGatt;
+    private BluetoothGattCharacteristic mWriteCharacteristic, mRemoteCharacteristic;
+    private BluetoothGattService mBatteryService;
+
+    boolean isSetMode;
+
+    private View mLayoutListDevice;
+    private View mLayoutProgress;
+
+    private View mButtonNoDevice, mButtonChooseDevice;
+
+    private View mButtonDisconnectHidden, mButtonDisconnect;
+
+    private View mButtonOpen, mButtonOpenHidden, mButtonClose, mButtonCloseHidden;
+
+    private TextView mTextStatus;
+
+    private boolean isShowKeyboard;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -84,7 +96,6 @@ public class MainActivity extends Activity implements View.OnClickListener {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             isFromLollipop = true;
         }
-        findViewById(R.id.buttonRefresh).setOnClickListener(this);
         mDeviceList = new ArrayList<>();
         final LayoutInflater inflater = getLayoutInflater();
         mDeviceAdapter = new LeDeviceListAdapter(mDeviceList) {
@@ -108,30 +119,75 @@ public class MainActivity extends Activity implements View.OnClickListener {
         };
         ListView listDevices = (ListView) findViewById(R.id.listDevices);
         listDevices.setAdapter(mDeviceAdapter);
-        mLayoutPassword = findViewById(R.id.layoutPassword);
+
         listDevices.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
             public void onItemClick(AdapterView<?> adapterView, View view, int i, long l) {
-                mLayoutPassword.setVisibility(View.VISIBLE);
                 mCurrentDevice = mDeviceList.get(i);
                 isActivatedDevice = false;
-                if (mCurrentDevice != null && mTxtDeviceInfo != null) {
-                    mTxtDeviceInfo.setText(mCurrentDevice.toString());
+                mLayoutListDevice.setVisibility(View.GONE);
+                toggleDisconnectButton(true);
+                String text = "Successful connection.\n";
+                if (mBatteryService != null) {
+                    List<BluetoothGattCharacteristic> characteristics = mBatteryService.getCharacteristics();
+                    if (characteristics != null) {
+
+                    }
                 }
+                mTextStatus.setText(text);
+
+            }
+        });
+        mButtonNoDevice = findViewById(R.id.buttonNoDevice);
+        mButtonNoDevice.setOnClickListener(this);
+        mButtonChooseDevice = findViewById(R.id.buttonChooseDevice);
+        mButtonChooseDevice.setOnClickListener(this);
+
+        mButtonDisconnect = findViewById(R.id.buttonDisconnect);
+        mButtonDisconnect.setOnClickListener(this);
+        mButtonDisconnectHidden = findViewById(R.id.buttonDisconnectHidden);
+        mButtonDisconnectHidden.setOnClickListener(this);
+
+        mButtonOpen = findViewById(R.id.buttonOpen);
+        mButtonOpen.setOnClickListener(this);
+        mButtonOpenHidden = findViewById(R.id.buttonOpenHidden);
+        mButtonOpenHidden.setOnClickListener(this);
+        mButtonClose = findViewById(R.id.buttonClose);
+        mButtonClose.setOnClickListener(this);
+        mButtonCloseHidden = findViewById(R.id.buttonCloseHidden);
+        mButtonCloseHidden.setOnClickListener(this);
+
+        mTextStatus = (TextView) findViewById(R.id.textStatus);
+
+        mLayoutListDevice = findViewById(R.id.layoutListDevices);
+        mLayoutProgress = findViewById(R.id.layoutProgress);
+
+        findViewById(R.id.buttonRefresh).setOnClickListener(this);
+
+        mEdtPassword = (EditText) findViewById(R.id.edtPassword);
+        mEdtPassword.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                isShowKeyboard = true;
             }
         });
         findViewById(R.id.buttonSendPassword).setOnClickListener(this);
-        mEdtPassword = (EditText) findViewById(R.id.edtPassword);
-        mLayoutProgress = (LinearLayout) findViewById(R.id.layoutProgress);
+
         mTextNoDevice = findViewById(R.id.textNoDevice);
         mTextNoDevice.setVisibility(mDeviceList.isEmpty() ? View.VISIBLE : View.GONE);
 
-        mLayoutControl = findViewById(R.id.layoutControl);
         findViewById(R.id.buttonOpen).setOnClickListener(this);
         findViewById(R.id.buttonClose).setOnClickListener(this);
 
-        mTxtDeviceInfo = (TextView) findViewById(R.id.txtDeviceInfo);
-        findViewById(R.id.txtClose).setOnClickListener(this);
+        findViewById(R.id.buttonDisconnect).setOnClickListener(this);
+
+        findViewById(R.id.buttonCloseApp).setOnClickListener(this);
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        isSetMode = true;
     }
 
     @Override
@@ -154,7 +210,14 @@ public class MainActivity extends Activity implements View.OnClickListener {
     private void detectNewDevice(BluetoothDevice device) {
         if (device != null) {
             if (mDeviceList != null) {
-                mDeviceList.add(device);
+                boolean foundDevice = false;
+                for (int i = 0; i < mDeviceList.size() && !foundDevice; i++) {
+                    BluetoothDevice device1 = mDeviceList.get(i);
+                    foundDevice = device.getAddress().equals(device1.getAddress());
+                }
+                if (!foundDevice) {
+                    mDeviceList.add(device);
+                }
                 mDeviceAdapter.notifyDataSetChanged();
             }
         }
@@ -164,12 +227,17 @@ public class MainActivity extends Activity implements View.OnClickListener {
     private BluetoothAdapter.LeScanCallback mLeScanCallback = new BluetoothAdapter.LeScanCallback() {
         @Override
         public void onLeScan(BluetoothDevice bluetoothDevice, int i, byte[] bytes) {
-            Toast.makeText(MainActivity.this, "Scanning done", Toast.LENGTH_SHORT).show();
             if (bluetoothDevice != null) {
                 Log.d(TAG, "Scan result info: " + bluetoothDevice.toString());
                 detectNewDevice(bluetoothDevice);
             }
-            mLayoutProgress.setVisibility(View.GONE);
+            if (mDeviceList.isEmpty()) {
+                mTextStatus.setText("No device found.");
+                toggleChooseDeviceButton(false);
+            } else {
+                mTextStatus.setText("Connect to device...");
+                toggleChooseDeviceButton(true);
+            }
             mTextNoDevice.setVisibility(mDeviceList.isEmpty() ? View.VISIBLE : View.GONE);
         }
     };
@@ -181,10 +249,12 @@ public class MainActivity extends Activity implements View.OnClickListener {
                 public void run() {
                     mScanning = false;
                     mBluetoothAdapter.stopLeScan(mLeScanCallback);
+                    mLayoutProgress.setVisibility(View.GONE);
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
                             Toast.makeText(MainActivity.this, "No device found", Toast.LENGTH_SHORT).show();
+                            mTextStatus.setText("Scanning's out of time. We remain your last scanning result.");
                         }
                     });
                 }
@@ -209,8 +279,15 @@ public class MainActivity extends Activity implements View.OnClickListener {
                 Log.d(TAG, "Scan result info: " + bluetoothDevice.toString());
                 detectNewDevice(bluetoothDevice);
             }
-            mLayoutProgress.setVisibility(View.GONE);
+            if (mDeviceList.isEmpty()) {
+                mTextStatus.setText("No device found.");
+                toggleChooseDeviceButton(false);
+            } else {
+                mTextStatus.setText("Connect to device...");
+                toggleChooseDeviceButton(true);
+            }
             mTextNoDevice.setVisibility(mDeviceList.isEmpty() ? View.VISIBLE : View.GONE);
+            mLayoutProgress.setVisibility(View.GONE);
         }
 
         @Override
@@ -218,8 +295,10 @@ public class MainActivity extends Activity implements View.OnClickListener {
             super.onScanFailed(errorCode);
             Toast.makeText(MainActivity.this, "Scanning error", Toast.LENGTH_SHORT).show();
             Log.d(TAG, "Scan result error: " + errorCode);
-            mLayoutProgress.setVisibility(View.GONE);
+            mTextStatus.setText("No device found.");
+            toggleChooseDeviceButton(false);
             mTextNoDevice.setVisibility(mDeviceList.isEmpty() ? View.VISIBLE : View.GONE);
+            mLayoutProgress.setVisibility(View.GONE);
         }
     };
 
@@ -228,8 +307,9 @@ public class MainActivity extends Activity implements View.OnClickListener {
             if (enable) {
                 mHandler.postDelayed(new Runnable() {
                     public void run() {
-                        mLayoutProgress.setVisibility(View.GONE);
                         mTextNoDevice.setVisibility(mDeviceList.isEmpty() ? View.VISIBLE : View.GONE);
+                        mLayoutProgress.setVisibility(View.GONE);
+                        mTextStatus.setText("Scanning's out of time. We remain your last scanning result.");
                         mScanning = false;
                         mBluetoothLeScanner.stopScan(mNewLeScanCallback);
                     }
@@ -246,16 +326,52 @@ public class MainActivity extends Activity implements View.OnClickListener {
 
     //-----------------------------Gatt-----------------------------
     public void connectToDevice(BluetoothDevice device) {
-        if (mGatt == null) {
+        try {
             mGatt = device.connectGatt(this, false, mGattCallback);
             scanLeDevice(false);// will stop after first device detection
+
+            mWriteCharacteristic = null;
+        } catch (Exception e) {
+
         }
-        mWriteCharacteristic = null;
-        mLayoutControl.setVisibility(View.VISIBLE);
+//        if (mGatt == null) {
+//            mGatt = device.connectGatt(this, false, mGattCallback);
+//            scanLeDevice(false);// will stop after first device detection
+//        }
+//        mWriteCharacteristic = null;
+//        mLayoutControl.setVisibility(View.VISIBLE);
+
     }
 
-    private BluetoothGatt mGatt;
-    private BluetoothGattCharacteristic mWriteCharacteristic, mRemoteCharacteristic;
+    public void disConnectToDevice() {
+        try {
+            mGatt.disconnect();
+//            mGatt.discoverServices();
+            mTextStatus.setText("Device is disconnected.");
+            toggleControlButtons(false);
+        } catch (Exception e) {
+
+        }
+    }
+
+    private void toggleChooseDeviceButton(boolean enable) {
+        mButtonNoDevice.setVisibility(enable ? View.GONE : View.VISIBLE);
+        mButtonChooseDevice.setVisibility(enable ? View.VISIBLE : View.GONE);
+    }
+
+    private void toggleDisconnectButton(boolean enable) {
+        mButtonDisconnectHidden.setVisibility(enable ? View.GONE : View.VISIBLE);
+        mButtonDisconnect.setVisibility(enable ? View.VISIBLE : View.GONE);
+    }
+
+    private void toggleControlButtons(boolean enable) {
+        mButtonCloseHidden.setVisibility(enable ? View.GONE : View.VISIBLE);
+        mButtonOpenHidden.setVisibility(enable ? View.GONE : View.VISIBLE);
+
+        mButtonClose.setVisibility(enable ? View.VISIBLE : View.GONE);
+        mButtonOpen.setVisibility(enable ? View.VISIBLE : View.GONE);
+    }
+
     private BluetoothGattCallback mGattCallback = new BluetoothGattCallback() {
         @Override
         public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
@@ -264,14 +380,14 @@ public class MainActivity extends Activity implements View.OnClickListener {
                 case BluetoothProfile.STATE_CONNECTED:
                     Log.i("gattCallback", "STATE_CONNECTED");
                     gatt.discoverServices();
-                    mLayoutControl.setVisibility(View.VISIBLE);
+
                     break;
                 case BluetoothProfile.STATE_DISCONNECTED:
                     Log.e("gattCallback", "STATE_DISCONNECTED");
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
-                            mLayoutControl.setVisibility(View.GONE);
+
                         }
                     });
                     break;
@@ -279,7 +395,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
-                            mLayoutControl.setVisibility(View.GONE);
+
                         }
                     });
                     Log.e("gattCallback", "STATE_OTHER");
@@ -309,8 +425,11 @@ public class MainActivity extends Activity implements View.OnClickListener {
                                 }
                             }*/
                             UUID uuidWrite = UUID.fromString("f000aa64-0451-4000-b000-000000000000");
+                            UUID uuidBattery = UUID.fromString("f000ffe0-0451-4000-b000-000000000000");
                             if (service.getUuid().compareTo(uuidWrite) == 0) {
                                 getCharacteristicsFromService(service);
+                            } else if (service.getUuid().compareTo(uuidWrite) == 0) {
+                                mBatteryService = service;
                             }
                         }
                     }
@@ -330,7 +449,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
         }
     };
 
-    private void getCharacteristicsFromService(BluetoothGattService service ) {
+    private void getCharacteristicsFromService(BluetoothGattService service) {
         List<BluetoothGattCharacteristic> characteristics = service.getCharacteristics();
         if (characteristics != null) {
             if (characteristics.size() > 0) {
@@ -355,21 +474,19 @@ public class MainActivity extends Activity implements View.OnClickListener {
     public void onClick(View view) {
         int id = view.getId();
         if (id == R.id.edtPassword || id == R.id.buttonSendPassword || id == R.id.layoutPassword) {
-            mLayoutPassword.setVisibility(View.VISIBLE);
-        } else {
-            mLayoutPassword.setVisibility(View.GONE);
+            isSetMode = true;
         }
         switch (id) {
             case R.id.buttonRefresh:
+                mTextStatus.setText("Scanning...");
                 if (mDeviceList != null) {
                     mDeviceList.clear();
                 }
                 if (mDeviceAdapter != null) {
                     mDeviceAdapter.notifyDataSetChanged();
                 }
-                mLayoutProgress.setVisibility(View.VISIBLE);
                 mTextNoDevice.setVisibility(View.GONE);
-                mLayoutControl.setVisibility(View.GONE);
+                mLayoutProgress.setVisibility(View.VISIBLE);
                 if (isFromLollipop) {
                     scanLeDeviceFromLollipop(true);
                 } else {
@@ -377,61 +494,95 @@ public class MainActivity extends Activity implements View.OnClickListener {
                 }
                 break;
             case R.id.buttonSendPassword:
+                hideSoftKeyboard();
                 String password = mEdtPassword.getText().toString();
-                isActivatedDevice = password.equals(PASSWORD);
+                isActivatedDevice = PASSWORD.equals(password);
                 Log.d(TAG, "Password " + (isActivatedDevice ? "Correct" : "Wrong"));
                 if (mCurrentDevice != null) {
                     if (isActivatedDevice) {
                         connectToDevice(mCurrentDevice);
+                        mTextStatus.setText("Correct password. Open the door.");
+                        toggleControlButtons(true);
+                    } else {
+                        mTextStatus.setText("Wrong password. Try again!");
+                        toggleControlButtons(false);
                     }
                 }
                 break;
             case R.id.buttonOpen:
                 if (mWriteCharacteristic != null && mRemoteCharacteristic != null) {
-                    //--------------------------Enter remote mode--------------------------
-                    mRemoteCharacteristic.setValue(0x01, BluetoothGattCharacteristic.FORMAT_UINT8, 0);
-                    mGatt.writeCharacteristic(mRemoteCharacteristic);
+                    if (isSetMode) {
+                        isSetMode = false;
+                        mRemoteCharacteristic.setValue(1, BluetoothGattCharacteristic.FORMAT_UINT8, 0);
+                        mGatt.writeCharacteristic(mRemoteCharacteristic);
 
-                    //--------------------------Write value--------------------------
-                    mWriteCharacteristic.setValue(0x5E, BluetoothGattCharacteristic.FORMAT_UINT8, 0);
-                    mGatt.writeCharacteristic(mWriteCharacteristic);
+                        new Handler().postDelayed(new Runnable() {
+                            @Override
+                            public void run() {
+                                mWriteCharacteristic.setValue("2");
+                                mGatt.writeCharacteristic(mWriteCharacteristic);
+                            }
+                        }, 3000);
+
+                    } else {
+                        mWriteCharacteristic.setValue("2");
+                        mGatt.writeCharacteristic(mWriteCharacteristic);
+                    }
+
                 }
                 break;
             case R.id.buttonClose:
                 if (mWriteCharacteristic != null && mRemoteCharacteristic != null) {
-                    //--------------------------Enter remote mode--------------------------
-                    mRemoteCharacteristic.setValue(0x01, BluetoothGattCharacteristic.FORMAT_UINT8, 0);
-                    mGatt.writeCharacteristic(mRemoteCharacteristic);
+                    if (isSetMode) {
+                        isSetMode = false;
+                        mRemoteCharacteristic.setValue(1, BluetoothGattCharacteristic.FORMAT_UINT8, 0);
+                        mGatt.writeCharacteristic(mRemoteCharacteristic);
 
-                    //--------------------------Write value--------------------------
-                    mWriteCharacteristic.setValue(0x5D, BluetoothGattCharacteristic.FORMAT_UINT8, 0);
-                    mGatt.writeCharacteristic(mWriteCharacteristic);
+                        new Handler().postDelayed(new Runnable() {
+                            @Override
+                            public void run() {
+                                mWriteCharacteristic.setValue("1");
+                                mGatt.writeCharacteristic(mWriteCharacteristic);
+                            }
+                        }, 3000);
+
+                    } else {
+                        mWriteCharacteristic.setValue("1");
+                        mGatt.writeCharacteristic(mWriteCharacteristic);
+                    }
                 }
                 break;
-            case R.id.txtClose:
-                mLayoutControl.setVisibility(View.GONE);
+            case R.id.buttonDisconnect:
+//                mWriteCharacteristic.setValue("1");
+//                mGatt.writeCharacteristic(mWriteCharacteristic);
+                disConnectToDevice();
+                isSetMode = true;
+                break;
+            case R.id.buttonNoDevice:
+                break;
+            case R.id.buttonChooseDevice:
+                mLayoutListDevice.setVisibility(View.VISIBLE);
+                break;
+            case R.id.buttonCloseApp:
+                mGatt.disconnect();
+                finish();
                 break;
             default:
                 break;
         }
     }
 
-    public void writeCustomCharacteristic(int value) {
-        if (mBluetoothAdapter == null || mGatt == null) {
-            Log.w(TAG, "BluetoothAdapter not initialized");
-            return;
-        }
-        /*check if the service is available on the device*/
-        BluetoothGattService mCustomService = mGatt.getService(UUID.fromString("00001110-0000-1000-8000-00805f9b34fb"));
-        if (mCustomService == null) {
-            Log.w(TAG, "Custom BLE Service not found");
-            return;
-        }
-        /*get the read characteristic from the service*/
-        BluetoothGattCharacteristic mWriteCharacteristic = mCustomService.getCharacteristic(UUID.fromString("00000001-0000-1000-8000-00805f9b34fb"));
-        mWriteCharacteristic.setValue(value, android.bluetooth.BluetoothGattCharacteristic.FORMAT_UINT8, 0);
-        if (!mGatt.writeCharacteristic(mWriteCharacteristic)) {
-            Log.w(TAG, "Failed to write characteristic");
+    private void hideSoftKeyboard() {
+        /*View view = getWindow().getCurrentFocus();
+        if (view != null) {
+            InputMethodManager inputMethodManager = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            inputMethodManager.hideSoftInputFromInputMethod(view.getWindowToken(), InputMethodManager.HIDE_IMPLICIT_ONLY);
+        }*/
+
+        if (isShowKeyboard) {
+            isShowKeyboard = false;
+            InputMethodManager inputMethodManager = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            inputMethodManager.toggleSoftInput(InputMethodManager.HIDE_IMPLICIT_ONLY, 0);
         }
     }
 }

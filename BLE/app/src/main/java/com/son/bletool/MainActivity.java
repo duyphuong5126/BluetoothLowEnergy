@@ -50,7 +50,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
 
     private static final int REQUEST_ENABLE_BT = 1;
     // Stops scanning after SCAN_PERIOD seconds.
-    private static final long SCAN_PERIOD = 4000;
+    private static final long SCAN_PERIOD = 10000;
     private LeDeviceListAdapter mDeviceAdapter;
     private ArrayList<BluetoothDevice> mDeviceList;
 
@@ -228,8 +228,10 @@ public class MainActivity extends Activity implements View.OnClickListener {
             if (enable) {
                 mHandler.postDelayed(new Runnable() {
                     public void run() {
+                        mLayoutProgress.setVisibility(View.GONE);
+                        mTextNoDevice.setVisibility(mDeviceList.isEmpty() ? View.VISIBLE : View.GONE);
                         mScanning = false;
-                        mBluetoothLeScanner.startScan(mNewLeScanCallback);
+                        mBluetoothLeScanner.stopScan(mNewLeScanCallback);
                     }
                 }, SCAN_PERIOD);
 
@@ -328,7 +330,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
         }
     };
 
-    private  void getCharacteristicsFromService(BluetoothGattService service ) {
+    private void getCharacteristicsFromService(BluetoothGattService service ) {
         List<BluetoothGattCharacteristic> characteristics = service.getCharacteristics();
         if (characteristics != null) {
             if (characteristics.size() > 0) {

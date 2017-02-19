@@ -111,8 +111,6 @@ public class MainActivity extends Activity implements View.OnClickListener {
                     textName.setText(bluetoothDevice.getName());
                     TextView textAddress = (TextView) view.findViewById(R.id.deviceAddress);
                     textAddress.setText(bluetoothDevice.getAddress());
-                    ImageView imgChecked = (ImageView) view.findViewById(R.id.imgChecked);
-                    ImageView imgLocked = (ImageView) view.findViewById(R.id.imgLocked);
                 }
                 return view;
             }
@@ -347,9 +345,10 @@ public class MainActivity extends Activity implements View.OnClickListener {
         try {
             mGatt.disconnect();
 //            mGatt.discoverServices();
+            mCurrentDevice = null;
             mTextStatus.setText("Device is disconnected.");
             toggleControlButtons(false);
-        } catch (Exception e) {
+        } catch (Exception ignored) {
 
         }
     }
@@ -428,7 +427,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
                             UUID uuidBattery = UUID.fromString("f000ffe0-0451-4000-b000-000000000000");
                             if (service.getUuid().compareTo(uuidWrite) == 0) {
                                 getCharacteristicsFromService(service);
-                            } else if (service.getUuid().compareTo(uuidWrite) == 0) {
+                            } else if (service.getUuid().compareTo(uuidBattery) == 0) {
                                 mBatteryService = service;
                             }
                         }
@@ -495,18 +494,22 @@ public class MainActivity extends Activity implements View.OnClickListener {
                 break;
             case R.id.buttonSendPassword:
                 hideSoftKeyboard();
-                String password = mEdtPassword.getText().toString();
-                isActivatedDevice = PASSWORD.equals(password);
-                Log.d(TAG, "Password " + (isActivatedDevice ? "Correct" : "Wrong"));
                 if (mCurrentDevice != null) {
-                    if (isActivatedDevice) {
-                        connectToDevice(mCurrentDevice);
-                        mTextStatus.setText("Correct password. Open the door.");
-                        toggleControlButtons(true);
-                    } else {
-                        mTextStatus.setText("Wrong password. Try again!");
-                        toggleControlButtons(false);
+                    String password = mEdtPassword.getText().toString();
+                    isActivatedDevice = PASSWORD.equals(password);
+                    Log.d(TAG, "Password " + (isActivatedDevice ? "Correct" : "Wrong"));
+                    if (mCurrentDevice != null) {
+                        if (isActivatedDevice) {
+                            connectToDevice(mCurrentDevice);
+                            mTextStatus.setText("Correct password. Open the door.");
+                            toggleControlButtons(true);
+                        } else {
+                            mTextStatus.setText("Wrong password. Try again!");
+                            toggleControlButtons(false);
+                        }
                     }
+                } else {
+                    mTextStatus.setText("Please connect to a device.");
                 }
                 break;
             case R.id.buttonOpen:
@@ -557,6 +560,7 @@ public class MainActivity extends Activity implements View.OnClickListener {
 //                mGatt.writeCharacteristic(mWriteCharacteristic);
                 disConnectToDevice();
                 isSetMode = true;
+                toggleDisconnectButton(false);
                 break;
             case R.id.buttonNoDevice:
                 break;
@@ -564,7 +568,9 @@ public class MainActivity extends Activity implements View.OnClickListener {
                 mLayoutListDevice.setVisibility(View.VISIBLE);
                 break;
             case R.id.buttonCloseApp:
-                mGatt.disconnect();
+                if (mGatt != null) {
+                    mGatt.disconnect();
+                }
                 finish();
                 break;
             default:

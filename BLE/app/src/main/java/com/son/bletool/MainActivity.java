@@ -27,7 +27,6 @@ import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.AdapterView;
 import android.widget.EditText;
-import android.widget.ImageView;
 import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -81,6 +80,8 @@ public class MainActivity extends Activity implements View.OnClickListener {
 
     private TextView mTextStatus;
 
+    private View mButtonBack;
+
     private boolean isShowKeyboard;
 
     @Override
@@ -132,7 +133,9 @@ public class MainActivity extends Activity implements View.OnClickListener {
                 toggleDisconnectButton(true);
                 String text = "Successful connection.\n";
                 mTextStatus.setText(text);
-
+                if (mButtonBack != null) {
+                    mButtonBack.setVisibility(View.GONE);
+                }
             }
         });
         mButtonNoDevice = findViewById(R.id.buttonNoDevice);
@@ -179,6 +182,9 @@ public class MainActivity extends Activity implements View.OnClickListener {
         findViewById(R.id.buttonDisconnect).setOnClickListener(this);
 
         findViewById(R.id.buttonCloseApp).setOnClickListener(this);
+
+        mButtonBack = findViewById(R.id.buttonBack);
+        mButtonBack.setOnClickListener(this);
 
         ScheduledExecutorService service = Executors.newSingleThreadScheduledExecutor();
         service.scheduleAtFixedRate(new Runnable() {
@@ -598,12 +604,21 @@ public class MainActivity extends Activity implements View.OnClickListener {
                 break;
             case R.id.buttonChooseDevice:
                 mLayoutListDevice.setVisibility(View.VISIBLE);
+                if (mButtonBack != null) {
+                    mButtonBack.setVisibility(View.VISIBLE);
+                }
                 break;
             case R.id.buttonCloseApp:
                 if (mGatt != null) {
                     mGatt.disconnect();
                 }
                 finish();
+                break;
+            case R.id.buttonBack:
+                if (mLayoutListDevice != null) {
+                    mLayoutListDevice.setVisibility(View.GONE);
+                }
+                mButtonBack.setVisibility(View.GONE);
                 break;
             default:
                 break;

@@ -15,13 +15,27 @@
         <LinearLayout
             android:layout_width="0dip"
             android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center">
+
+            <ImageView
+                android:id="@+id/buttonBack"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:src="@mipmap/ic_close_white_24dp"
+                android:background="@drawable/button_1"
+                android:visibility="gone"/>
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dip"
+            android:layout_height="match_parent"
             android:layout_weight="5"
             android:gravity="center_vertical">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginLeft="20dip"
                 android:text="Bluetooth Door Control"
                 android:textColor="#fff"
                 android:textSize="20sp"
@@ -162,6 +176,7 @@
                     android:background="#0000"
                     android:gravity="center_vertical"
                     android:hint="Enter password"
+                    android:inputType="textPassword"
                     android:paddingBottom="3dip"
                     android:paddingLeft="5dip"
                     android:paddingTop="3dip"
